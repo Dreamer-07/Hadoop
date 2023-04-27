@@ -7,7 +7,6 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
-import org.apache.hadoop.mapreduce.task.reduce.InMemoryWriter;
 
 import java.io.IOException;
 
@@ -20,6 +19,11 @@ import java.io.IOException;
 public class WordCountDriver {
 
     public static void main(String[] args) throws IOException, InterruptedException, ClassNotFoundException {
+        // 获取参数
+        if (args.length != 2) {
+            System.exit(100);
+        }
+
         Configuration configuration = new Configuration();
         // 获取 job
         Job job = Job.getInstance(configuration);
@@ -40,8 +44,13 @@ public class WordCountDriver {
         job.setOutputValueClass(IntWritable.class);
 
         // 设置输入路径和输出路径
-        FileInputFormat.setInputPaths(job, new Path(WordCountDriver.class.getClassLoader().getResource("text.txt").getPath()));
-        FileOutputFormat.setOutputPath(job, new Path("D:\\StudyCode\\BigData\\Hadoop\\src\\main\\resources\\output"));
+        // 本地
+        // FileInputFormat.setInputPaths(job, new Path(WordCountDriver.class.getClassLoader().getResource("text.txt").getPath()));
+        // FileOutputFormat.setOutputPath(job, new Path("D:\\StudyCode\\BigData\\Hadoop\\src\\main\\resources\\output"));
+        // 服务器集群
+        FileInputFormat.setInputPaths(job, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+
 
         // 提交 job
         boolean wait = job.waitForCompletion(true);

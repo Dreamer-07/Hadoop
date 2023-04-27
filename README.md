@@ -111,7 +111,40 @@ Hadoop：
 
 [hadoop安装 + 历史服务器 + 日志收集](https://blog.csdn.net/yy8623977/article/details/124408440)
 
+
+
 ### 常用脚本
+
+集群分发脚本(可以用这个同步配置文件的修改)
+
+```sh
+if [ $# -lt 1 ]
+then
+    echo Not Enough Arguement!
+    exit;
+fi
+#2. 遍历集群所有机器
+for host in hadoop01 hadoop02
+do
+         echo ==================== $host ====================
+         #3. 遍历所有目录，挨个发送
+         for file in $@
+         do
+                        #4. 判断文件是否存在
+                   if [ -e $file ]
+                  then
+                                #5. 获取父目录
+                    pdir=$(cd -P $(dirname $file); pwd)
+                                        #6. 获取当前文件的名称
+                                        fname=$(basename $file)
+                                        ssh $host "mkdir -p $pdir" #-p保证哪怕已经存在也不报错
+                                        rsync -av $pdir/$fname $host:$pdir
+              else
+                    echo $file does not exists!
+            fi
+         done
+done
+```
 
 启动 hadoop 集群(记得改成对应的主机名)
 
@@ -399,10 +432,121 @@ public class HdfsClientTest {
 
 ### WordCount 实操
 
-## 进阶
+定义 Mapper：
 
-### HDFS
+```java
+public class WordCountMapper extends Mapper<LongWritable, Text, Text, IntWritable> {
+
+    private Text reduceKey = new Text();
+
+    private IntWritable reduceValue = new IntWritable(1);
+
+    @Override
+    protected void map(LongWritable key, Text value, Mapper<LongWritable, Text, Text, IntWritable>.Context context) throws IOException, InterruptedException {
+        // 获取一行数据
+        String str = value.toString();
+        // 切割数据
+        String[] strArr = str.split(" ");
+
+        for (String s : strArr) {
+            // 设置 key 值
+            reduceKey.set(s);
+            // 写出
+            context.write(reduceKey, reduceValue);
+        }
+    }
+}
+```
+
+定义 Reduce：
+
+```java
+public class WordCountReduce extends Reducer<Text, IntWritable, Text, IntWritable> {
+
+    /**
+     *
+     * @param key           map 输出的 key
+     * @param values        map 相同 key 对应的 values
+     * @param context       reduce 上下文环境
+     * @throws IOException
+     * @throws InterruptedException
+     */
+    @Override
+    protected void reduce(Text key, Iterable<IntWritable> values, Reducer<Text, IntWritable, Text, IntWritable>.Context context) throws IOException, InterruptedException {
+        // 对 value / key 进行 reduce 操作
+        int sum = 0;
+        for (IntWritable value : values) {
+            sum += value.get();
+        }
+        IntWritable writable = new IntWritable(sum);
+
+        context.write(key, writable);
+    }
+}
+```
+
+定义 Driver：构建提交给 YARN 的 job 程序
+
+```java
+public static void main(String[] args) throws IOException, InterruptedException, ClassNotFoundException {
+    Configuration configuration = new Configuration();
+    // 获取 job
+    Job job = Job.getInstance(configuration);
+
+    // 设置 jar 包路径
+    job.setJarByClass(WordCountDriver.class);
+
+    // 关联 mapper 和 reduce
+    job.setMapperClass(WordCountMapper.class);
+    job.setReducerClass(WordCountReduce.class);
+
+    // 设置 map 输出的 kv 类型
+    job.setMapOutputKeyClass(Text.class);
+    job.setMapOutputValueClass(IntWritable.class);
+
+    // 设置最终输出的 kv 类型
+    job.setOutputKeyClass(Text.class);
+    job.setOutputValueClass(IntWritable.class);
+
+    // 设置输入路径和输出路径
+    FileInputFormat.setInputPaths(job, new Path(WordCountDriver.class.getClassLoader().getResource("text.txt").getPath()));
+    FileOutputFormat.setOutputPath(job, new Path("D:\\StudyCode\\BigData\\Hadoop\\src\\main\\resources\\output"));
+
+    // 提交 job
+    boolean wait = job.waitForCompletion(true);
+
+    System.exit(wait ? 0 : 1);
+}
+```
+
+上述的 Driver 只能在本地 windows 上运行，如果需要在集群上运行需要修改成下述：
+
+```java
+// 获取参数
+if (args.length != 2) {
+    System.exit(100);
+}
+
+...
+
+// 设置输入路径和输出路径
+// 服务器集群
+FileInputFormat.setInputPaths(job, new Path(args[0]));
+FileOutputFormat.setOutputPath(job, new Path(args[1]));
+```
+
+使用 maven package 打包后上传到服务器上输入：
+
+```bash
+hadoop jar [jar包] Driver主类全类名 hdfs上的输入文件路径 hdfs上的输出文件路径
+```
+
+
+
+## 进阶
 
 ### MapReduce
 
-#### MapReduce 核心思想
+### HDFS
+
+### YARN
