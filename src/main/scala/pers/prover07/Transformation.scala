@@ -1,7 +1,9 @@
 package pers.prover07
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.{Partitioner, SparkConf, SparkContext}
+
+import scala.collection.mutable.ListBuffer
 
 /**
  * 转换算子
@@ -11,7 +13,7 @@ object Transformation {
     val conf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("map")
     val sc = new SparkContext(conf)
 
-    testGroupByKey(sc)
+    testPartitionBy(sc)
 
     sc.stop()
   }
@@ -141,6 +143,140 @@ object Transformation {
     // 根据哪个值排序，是否升序，分区数量
     val res1: Array[Array[(Char, Int)]] = rdd.sortBy(tup => tup._2, ascending = true, numPartitions = 3).glom().collect()
     val res2: Array[(Char, Int)] = rdd.sortBy(tup => tup._2, ascending = true, numPartitions = 3).collect()
+
+    res1.foreach(res => {
+      res.foreach(r => print(r._1 + ":" + r._2 + ","))
+      println()
+    })
+    println()
+    res2.foreach(res => {
+      println(res._1 + ":" + res._2)
+    })
+  }
+
+  /**
+   * 根据第一个键进行分区排序
+   *
+   * @param sc
+   */
+  def testSortByKey(sc: SparkContext): Unit = {
+    val rdd: RDD[(Char, Int)] = sc.parallelize((List(('w', 2), ('h', 5), ('k', 9), ('m', 3), ('a', 7),
+      ('p', 4), ('q', 1), ('n', 8), ('y', 6))))
+
+    // 根据 key 进行排序
+    val res1: Array[Array[(Char, Int)]] = rdd.sortByKey(ascending = false, numPartitions = 4).glom().collect()
+
+    res1.foreach(res => {
+      res.foreach(r => print(r._1 + ":" + r._2 + ","))
+      println()
+    })
+  }
+
+  /**
+   * 并集
+   *
+   * @param sc
+   */
+  def testUnion(sc: SparkContext): Unit = {
+    // 定义多个 rdd
+    val rdd1: RDD[Int] = sc.parallelize(Array(1, 2, 3, 4))
+    val rdd2: RDD[Int] = sc.parallelize(Array(3, 4, 7, 8))
+
+    // 注意：union 的计算必须是同类型的才可以
+    val result: Array[Int] = rdd1.union(rdd2).collect()
+
+    println(result.mkString(","))
+  }
+
+  /**
+   * 计算交集和差集
+   *
+   * @param sc
+   */
+  def testIntersectionSubtract(sc: SparkContext): Unit = {
+    // 定义多个 rdd
+    val rdd1: RDD[Int] = sc.parallelize(Array(1, 2, 3, 4))
+    val rdd2: RDD[Int] = sc.parallelize(Array(3, 4, 7, 8))
+
+    // 计算交集
+    val res1: String = rdd1.intersection(rdd2).collect().mkString(",")
+    println(res1)
+
+    // 计算差集
+    val res2: String = rdd1.subtract(rdd2).collect().mkString(",")
+    println(res2)
+  }
+
+  def testJoin(sc: SparkContext): Unit = {
+    val info: RDD[(Int, String)] = sc.parallelize(List((101, "saber"), (102, "arh"), (103, "lan")))
+    val servlet: RDD[(Int, String)] = sc.parallelize(List((101, "daimao"), (102, "byq"), (104, "gongling")))
+    // join - 通过 key 进行关联
+    val res1: Array[(Int, (String, String))] = servlet.join(info).collect()
+    println(res1.mkString(","))
+
+    // leftJoin - 左外连接(显示左边)
+    val res2: Array[(Int, (String, Option[String]))] = info.leftOuterJoin(servlet).collect()
+    println(res2.mkString(","))
+
+    // rightJoin - 右外连接(显示右边)
+    val res3: Array[(Int, (Option[String], String))] = info.rightOuterJoin(servlet).collect()
+    println(res3.mkString(","))
+  }
+
+  /**
+   * 自定义分区规则
+   */
+  def testPartitionBy(sc: SparkContext): Unit = {
+    val rdd: RDD[(String, Int)] = sc.parallelize(List(("andy", 1), ("jack", 1),
+      ("hello", 1), ("lucy", 1), ("tom", 1), ("su", 1)))
+
+    println("自定义分区之前:" + rdd.getNumPartitions)
+
+    // 调用 partitioner 对 rdd 进行重新分区
+    val rdd1: RDD[(String, Int)] = rdd.partitionBy(new Partitioner {
+      // 分区数量
+      override def numPartitions: Int = 3
+
+      // 分区规则
+      override def getPartition(key: Any): Int = {
+        val firstChar: Char = key.toString.charAt(0)
+        println("key:" + key)
+        if (firstChar >= 'a' && firstChar <= 'i') {
+          return 0
+        } else if (firstChar >= 'j' && firstChar <= 'q') {
+          return 1
+        } else {
+          return 2
+        }
+      }
+    })
+
+    // 分区
+    val result: Array[Array[(String, Int)]] = rdd1.glom().collect()
+
+    result.foreach(res => {
+      println(res.mkString(","))
+    })
+  }
+
+  /**
+   * 与map类似，遍历的单位是每个partition上的数据。
+   */
+  def testMapPartitions(sc: SparkContext): Unit = {
+    val rdd: RDD[(String, Int)] = sc.parallelize(List(("any", 1), ("jack", 1),
+      ("hello", 1), ("lucy", 1), ("tom", 1), ("su", 1)))
+
+    // 定义一个处理函数
+    def process(datas: Iterator[String]): Iterator[String] = {
+      val result = ListBuffer[String]()
+      //遍历 datas
+      for (ele <- datas) {
+        result.append(ele)
+      }
+      //返回
+      result.iterator
+    }
+
   }
 
 }
