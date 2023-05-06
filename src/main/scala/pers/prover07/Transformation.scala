@@ -13,7 +13,7 @@ object Transformation {
     val conf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("map")
     val sc = new SparkContext(conf)
 
-    testPartitionBy(sc)
+    testSample(sc)
 
     sc.stop()
   }
@@ -264,19 +264,39 @@ object Transformation {
    */
   def testMapPartitions(sc: SparkContext): Unit = {
     val rdd: RDD[(String, Int)] = sc.parallelize(List(("any", 1), ("jack", 1),
-      ("hello", 1), ("lucy", 1), ("tom", 1), ("su", 1)))
+      ("hello", 1), ("lucy", 1), ("tom", 1), ("su", 1)), 3)
 
     // 定义一个处理函数
-    def process(datas: Iterator[String]): Iterator[String] = {
-      val result = ListBuffer[String]()
+    def process(datas: Iterator[(String, Int)]): Iterator[(String, Int)] = {
+      // 传递过来的分区之后的列表数据
+      val result = ListBuffer[(String, Int)]()
       //遍历 datas
       for (ele <- datas) {
-        result.append(ele)
+        val count: Int = ele._2 + 1
+        result.append((ele._1, count))
       }
-      //返回
+      // 返回处理好的分区数据
       result.iterator
     }
 
+    val result: Array[Array[(String, Int)]] = rdd.mapPartitions(process).glom().collect()
+
+    result.foreach(res => println(res.mkString(",")))
   }
+
+  def testSample(sc: SparkContext): Unit = {
+    val rdd: RDD[Int] = sc.parallelize(List(1, 2, 3, 4, 5, 6, 7))
+
+    /**
+     * withReplacement：是否有放回取样，即样本是否可以重复抽取，默认为 true，表示有放回取样。
+     * fraction：抽样比例，即从原始数据集中抽取的样本的比例，取值范围为 [0, 1]，默认为 0.1。
+     * seed：随机数种子，用于初始化随机数生成器，从而实现每次抽样的结果一致性。
+     */
+    val result: Array[Int] = rdd.sample(false, 0.5).collect()
+
+    println(result.mkString(","))
+  }
+
+
 
 }
